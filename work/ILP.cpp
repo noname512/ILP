@@ -9,6 +9,7 @@
 
 #include <unistd.h>
 
+int testST, testED;
 const int W = 8;
 const int H = 8;
 const int S = W * H;
@@ -19,6 +20,7 @@ const int VARNUM = 20000;
 const int CONNUM = 2000000;
 const int ENERGY_COMPUTE = 1;
 const int ENERGY_TRANSFER = 1;
+const double sigma = 0.5;
 int x[S];
 int y[S];
 std::map<Json::Value, int> coreNum;
@@ -36,7 +38,7 @@ int eqCon[CONNUM];
 int leqCon[CONNUM];
 int eqNum, leqNum;
 int varNum, binNum;
-double a[VARNUM], b[VARNUM], c[VARNUM], d[VARNUM], f[VARNUM];
+double a[VARNUM], b[VARNUM], c[VARNUM], d[VARNUM], e[VARNUM], f[VARNUM];
 double tg[VARNUM], ptg[VARNUM];
 int rat[VARNUM];
 
@@ -114,12 +116,12 @@ void createModel() {
         fin[i] = varNum++;
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++) {
+            if (data[i][j] > 0) rat[varNum] = ENERGY_TRANSFER;
             lat[i][j] = varNum++;
-            rat[varNum] = ENERGY_TRANSFER;
         }
     for (int i = 0; i < N; i++) {
+        //rat[varNum] = ENERGY_COMPUTE;
         clat[i] = varNum++;
-        rat[varNum] = ENERGY_COMPUTE;
     }
 
     std::cout << "varNum = " << varNum << std::endl;
@@ -157,7 +159,7 @@ void createModel() {
 
     // latency constraint
     for (int i = 0; i < N; i++) {
-        leqCon[++leqNum] = neuronSize[i] * C;
+        leqCon[++leqNum] = 0;//-neuronSize[i];
         leq[leqNum].clear();
         leq[leqNum].push_back(std::make_pair(clat[i], -1));
 
@@ -167,6 +169,7 @@ void createModel() {
         leq[leqNum].push_back(std::make_pair(fin[i], -1));
     }
 
+    testST = leqNum;
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
             if (data[i][j] > 0) {
@@ -202,6 +205,8 @@ void createModel() {
                 leq[leqNum].clear();
                 leq[leqNum].push_back(std::make_pair(lat[i][j], 1));
             }
+        
+    testED = leqNum;
 
     std::cout << "constraint 3 done, leqNum = " << leqNum << std::endl;
 
@@ -268,7 +273,7 @@ void Pi(double (&x)[VARNUM], int i) {
     }
     calc = (eqCon[i] - calc) / len;
     for (std::vector<std::pair<int, int> >::iterator po = eq[i].begin(); po != eq[i].end(); po++)
-        x[(*po).first] += calc * (*po).second;
+        x[(*po).first] += sigma * calc * (*po).second;
 }
 
 void Pj(double (&x)[VARNUM], int i) {
@@ -281,7 +286,7 @@ void Pj(double (&x)[VARNUM], int i) {
     calc = (leqCon[i] - calc) / len;
     calc = std::fmin((double)0, calc);
     for (std::vector<std::pair<int, int> >::iterator po = leq[i].begin(); po != leq[i].end(); po++)
-        x[(*po).first] += calc * (*po).second;
+        x[(*po).first] += sigma * calc * (*po).second;
 }
 
 void P(double (&x)[VARNUM], double (&y)[VARNUM]) {
@@ -298,8 +303,12 @@ double tot(double (&x)[VARNUM]) {
 }
 
 void t(double (&x)[VARNUM], double (&y)[VARNUM]) {
-    for (int i = 0; i < binNum; i++) x[i] = y[i] - gam * rat[i];
-    for (int i = binNum; i < varNum; i++) x[i] = y[i] - 100000 * gam * rat[i];
+    for (int i = 0; i < varNum; i++) x[i] = y[i] - gam * rat[i];
+    // for (int i = 0; i < binNum; i++) x[i] = y[i] - gam * rat[i];
+    // for (int i = binNum; i < varNum; i++) x[i] = y[i] - 100 * gam * rat[i];
+
+    // for (int i = 0; i < varNum; i++) x[i] = y[i];
+    // for (int i = 0; i < N; i++) x[fin[i]] = y[fin[i]] - 100 * gam;
 }
 
 void T(double (&x)[VARNUM], double (&y)[VARNUM], double lambda) {
@@ -332,7 +341,7 @@ double r(double (&x)[VARNUM]) {
 void calc(int lim, double lambda) {
     memset(a, 0, sizeof a);
     for (int i = binNum; i < varNum; i++)
-        a[i] = 1000000;
+        a[i] = 1000;
     
     bool loop;
     for (int i = 1; i <= lim; i++) {
@@ -340,42 +349,45 @@ void calc(int lim, double lambda) {
         bet = 1 - (1 - tau) * i / lim;
 
         // binaryzation
-        for (int j = 0; j < binNum; j++)
-            if (a[j] <= alp) d[j] = b[j] = 0;
-            else if (a[j] >= bet) d[j] = b[j] = 1;
-            else d[j] = b[j] = a[j];
-        for (int j = binNum; j < varNum; j++)
-            d[j] = b[j] = a[j];
+        // for (int j = 0; j < binNum; j++)
+        //     if (a[j] <= alp) e[j] = b[j] = 0;
+        //     else if (a[j] >= bet) e[j] = b[j] = 1;
+        //     else e[j] = b[j] = a[j];
+        // for (int j = binNum; j < varNum; j++)
+        //     e[j] = b[j] = a[j];
+       for (int j = 0; j < varNum; j++) e[j] = b[j] = a[j];
 
-        std::cout << "binaryzation done" << std::endl;
+//        std::cout << "binaryzation done" << std::endl;
 
         // superiority
         gam = 1;
         loop = true;
-        while (loop) {
+        while (loop && gam > 1e-6) {
             t(c, b);
             if (tot(c) <= tot(b)) {
-                std::cout << "true" << std::endl;
-                T(b, c, lambda);
-                std::cout << std::fixed << std::setprecision(5) << r(c) << "->" << r(b) << std::endl;
-                if (r(b) < r(c)) loop = false;
+                T(d, c, lambda);
+//                std::cout << std::fixed << std::setprecision(5) << r(b) << "->" << r(c) << "->" << r(d) << std::endl;
+                if (r(d) < r(b)) loop = false;
                 else gam = gam / 2;
             } else gam = gam / 2;
-            std::cout << std::fixed << std::setprecision(5) << "gam = " << gam << std::endl;
+//            std::cout << std::fixed << std::setprecision(5) << "gam = " << gam << std::endl;
         }
-        T(f, d, lambda);
+        if (gam < 1e6 + 1e7) gam = 0;
+        T(f, e, lambda);
 
-        std::cout << "superiority done" << std::endl;
 
         // conflict resolving
-        for (int j = 0; j < binNum; j++)
-            if (a[j] <= alp && f[j] >= tau) c[j] = tau - eps;
-            else if (a[j] >= bet && f[j] <= tau) c[j] = tau + eps;
-            else c[j] = f[j];
-        for (int j = binNum; j < varNum; j++)
-            c[j] = f[j];
+        // for (int j = 0; j < binNum; j++)
+        //     if (a[j] <= alp && f[j] >= tau) c[j] = tau - eps;
+        //     else if (a[j] >= bet && f[j] <= tau) c[j] = tau + eps;
+        //     else c[j] = f[j];
+        // for (int j = binNum; j < varNum; j++)
+        //     c[j] = f[j];
+            
+       for (int j = 0; j < varNum; j++) c[j] = f[j];
+    //    P(c, a);
 
-        std::cout << std::fixed << std::setprecision(5) << "conflict resolving done, r(x) = " << r(c) << ", totans = " << tot(c) << std::endl;
+        std::cout << std::fixed << std::setprecision(5) << i << "\'th conflict resolving done, r(x) = " << r(c) << ", totans = " << tot(c) << std::endl;
 
         for (int j = 0; j < varNum; j++) a[j] = c[j];
     }
@@ -395,12 +407,12 @@ void outp() {
             std::cout << a[map[i][j]] << " ";
         std::cout << std::endl;
     }
-    std::cout << "aux" << std::endl;
+/*    std::cout << "aux" << std::endl;
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++)
             std::cout << a[aux[i][j]] << " ";
         std::cout << std::endl;
-    }
+    }*/
     std::cout << "fin" << std::endl;
     for (int i = 0; i < N; i++)
         std::cout << std::fixed << std::setprecision(3) << a[fin[i]] << " ";
@@ -414,9 +426,10 @@ void outp() {
     std::cout << "clat" << std::endl;
     for (int i = 0; i < N; i++)
         std::cout << std::fixed << std::setprecision(3) << a[clat[i]] << " ";
+    std::cout << std::endl << "a?" << std::endl;
     for (int i = 0; i < varNum; i++) std::cout << (a[i] <= 0.5? 0 : 1) << " ";
     std::cout << std::endl;
-    std::cout << "totans = " << tot(a) << std::endl;
+    std::cout << "r = " << r(a) << ", totans = " << tot(a) << std::endl;
     fclose(stdout);
 }
 
@@ -426,8 +439,8 @@ int main() {
     std::cout << "init done" << std::endl;
     createModel();
     std::cout << "creat model done" << std::endl;
-    calc(100, 1.9);
-    fin_calc();
+    calc(100, 1);
+//    fin_calc();
     std::cout << "calc done" << std::endl;
     outp();
     std::cout << "outp done" << std::endl;
